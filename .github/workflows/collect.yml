@@ -1,0 +1,53 @@
+name: collect
+
+on:
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Collect
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python collect.py
+      - name: Heartbeat
+        # GitHub switches scheduled workflows off after 60 days without repository activity.
+        run: |
+          if [ "$(date -u +%H)" = "03" ]; then
+            date -u +%FT%TZ > heartbeat.txt
+            git config user.name "bot"
+            git config user.email "bot@users.noreply.github.com"
+            git add heartbeat.txt
+            git commit -m "tick" && git push || true
+          fi
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.d.outputs.page_url }}
+    steps:
+      - id: d
+        uses: actions/deploy-pages@v4
