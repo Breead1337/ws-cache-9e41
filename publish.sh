@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# One-shot: push this folder to yanisplugg/ws-cache-9e41, switch Pages to "GitHub Actions", start the first build.
+# One-shot: push this folder to Breead1337/ws-cache-9e41, switch Pages to "GitHub Actions", start the first build.
 # Run from this folder:  bash publish.sh
 set -euo pipefail
 cd "$(dirname "$0")"
-REPO=yanisplugg/ws-cache-9e41
+REPO=Breead1337/ws-cache-9e41
 TOKEN=${GH_TOKEN:-$(git -C ../../olcvpn-client remote get-url origin | sed -E 's#.*:([^@]+)@.*#\1#')}
 
 rm -rf out out_test
@@ -12,7 +12,7 @@ git config user.name bot
 git config user.email bot@users.noreply.github.com
 git add -A
 git commit -q -m init || true
-git push -q "https://yanisplugg:${TOKEN}@github.com/${REPO}.git" main
+git push -q "https://Breead1337:${TOKEN}@github.com/${REPO}.git" main
 git remote remove origin 2>/dev/null || true
 git remote add origin "https://github.com/${REPO}.git"
 
