@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 REPO=yanisplugg/ws-cache-9e41
-TOKEN=$(git -C ../../olcvpn-client remote get-url origin | sed -E 's#.*:([^@]+)@.*#\1#')
+TOKEN=${GH_TOKEN:-$(git -C ../../olcvpn-client remote get-url origin | sed -E 's#.*:([^@]+)@.*#\1#')}
 
 rm -rf out out_test
 [ -d .git ] || git init -q -b main            # own repo: the parent folder is another git repo
