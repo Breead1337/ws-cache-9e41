@@ -38,17 +38,25 @@ def register():
             "client_ipv4": a["v4"], "client_ipv6": a.get("v6")}
 
 
-def build(path, n=40, minimum=10):
-    """Writes n accounts to path; raises (leaving path untouched) if fewer than `minimum` registered."""
-    pool = []
-    for _ in range(n * 2):
-        if len(pool) == n:
+def build(path, n=60, minimum=10):
+    """Tops the pool in `path` (the previous run's, if any) up with new accounts and keeps the newest n.
+    Cloudflare throttles registrations from CI IPs, so one run alone yields only a handful."""
+    try:
+        pool = json.load(open(path))
+    except Exception:
+        pool = []
+    fresh = 0
+    for _ in range(40):
+        if fresh >= 20:
             break
         try:
             pool.append(register())
-        except Exception as e:  # rate limit / transient: skip, keep going
+            fresh += 1
+            time.sleep(1.5)
+        except Exception as e:  # rate limit / transient: back off, keep going
             print("warp skip:", e, file=sys.stderr)
-        time.sleep(1.5)
+            time.sleep(8)
+    pool = pool[-n:]
     if len(pool) < minimum:
         raise RuntimeError(f"only {len(pool)} WARP accounts")
     json.dump(pool, open(path, "w"))
