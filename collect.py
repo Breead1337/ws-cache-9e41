@@ -19,6 +19,8 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
+START = time.time()
+GET_DEADLINE = 36 * 60  # seconds after start; the real-GET check stops here so the WARP pool and publishing still fit the 45 min job
 MAX_LINKS = 20000
 CANDIDATES = 60000  # round-robin pool that gets the TCP check; the first MAX_LINKS survivors are published
 TCP_TIMEOUT = 3.0
@@ -194,6 +196,16 @@ def alive(link, cache):
     return cache[hp]
 
 
+RU_SOURCE = re.compile(r"russia|(^|[-_/.])rus?([-_/.]|$)|white|(^|[-_/.])wl([-_/.]|$)|cidr", re.I)
+RU_REMARK = re.compile("🇷🇺|russia|россия|(^|[^A-Za-z])RU([^A-Za-z]|$)", re.I)
+
+
+def is_ru(link, repo):
+    """Russian lists (and links remarked as Russian) only answer from RU networks: a check from a US runner
+    would wrongly drop them, so they stay on the TCP check."""
+    return bool(RU_SOURCE.search(repo) or RU_REMARK.search(urllib.parse.unquote(link.partition("#")[2])))
+
+
 def tcp_filter(links):
     """Keeps the links whose server answers a TCP connect, in the original order."""
     cache, deadline = {}, time.time() + TCP_BUDGET
@@ -224,21 +236,37 @@ def main():
                 per_repo[repo] = uniq
                 log(f"{repo}: {len(uniq)}")
     # Round-robin across sources so one giant list cannot crowd out the rest.
-    queues = [per_repo[r] for r in repos if r in per_repo]
+    names = [r for r in repos if r in per_repo]
+    queues = [per_repo[r] for r in names]
+    src = {}
     for q in queues:
         random.shuffle(q)
     out, seen = [], set()
     depth = max((len(q) for q in queues), default=0)
     for i in range(depth):
-        for q in queues:
+        for qi, q in enumerate(queues):
             if i < len(q):
                 k = key(q[i])
                 if k not in seen:
                     seen.add(k)
                     out.append(q[i])
+                    src[q[i]] = names[qi]
         if len(out) >= CANDIDATES:
             break
-    out = tcp_filter(out[:CANDIDATES])[:MAX_LINKS]
+    out = tcp_filter(out[:CANDIDATES])
+    try:  # non-Russian links: a real `GET /generate_204` through the server instead of a bare TCP connect
+        import geturl_check
+        rest = [ln for ln in out if not is_ru(ln, src.get(ln, ""))]
+        good, unknown, done = geturl_check.check(rest, START + GET_DEADLINE, log)
+        if len(good) >= 100:  # a broken Xray run must not wipe the list: then the TCP result stands
+            keep = good | set(unknown) | {ln for ln in out if is_ru(ln, src.get(ln, ""))}
+            log(f"get check: kept {len(good)} of {done} tested non-RU links (+{len(unknown)} unsupported transport, TCP only)")
+            out = [ln for ln in out if ln in keep]
+        else:
+            log(f"get check: only {len(good)} passed, keeping the TCP result")
+    except Exception as e:
+        log(f"get check skipped: {e}")
+    out = out[:MAX_LINKS]
     os.makedirs(OUT, exist_ok=True)
     with open(os.path.join(OUT, "v.txt"), "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(out) + "\n")
