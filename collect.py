@@ -245,7 +245,12 @@ def main():
     log(f"done: {len(out)} links from {len(per_repo)} repos")
     try:  # git-hosted mirror of the WARP generators; keep the previous pool if Cloudflare throttles this run
         import warp_pool
-        warp_pool.build(os.path.join(OUT, "w.json"))
+        w = os.path.join(OUT, "w.json")
+        try:  # start from the pool published by the previous run
+            urllib.request.urlretrieve("https://breead1337.github.io/ws-cache-9e41/w.json", w)
+        except Exception:
+            pass
+        warp_pool.build(w)
     except Exception as e:
         log(f"warp pool: {e}")
         try:
