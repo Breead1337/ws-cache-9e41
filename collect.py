@@ -267,7 +267,10 @@ def main():
             os.makedirs(OUT, exist_ok=True)
             with open(os.path.join(OUT, "g.txt"), "w", encoding="utf-8", newline="\n") as f:
                 f.write("\n".join(strict[:MAX_LINKS]) + "\n")  # strict list: GET-verified + Russian (TCP) + unsupported transport
-            out = [ln for ln in out if ln not in failed]
+            # Order, not removal: GET-verified first, then TCP-only links (Russian, unsupported transport, not reached),
+            # links that FAILED the GET last - they only fill the list up to MAX_LINKS.
+            failed_set = set(failed)
+            out = [ln for ln in out if ln in good] + [ln for ln in out if ln not in good and ln not in failed_set] + [ln for ln in out if ln in failed_set]
         else:
             log(f"get check: only {len(good)} passed, keeping the TCP result")
     except Exception as e:
