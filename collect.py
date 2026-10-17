@@ -189,7 +189,7 @@ def alive(link, cache):
         try:
             socket.create_connection(hp, timeout=TCP_TIMEOUT).close()
             cache[hp] = True
-        except OSError:
+        except Exception:  # OSError, and UnicodeError/ValueError from malformed hostnames
             cache[hp] = False
     return cache[hp]
 
