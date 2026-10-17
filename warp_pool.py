@@ -46,7 +46,7 @@ def build(path, n=60, minimum=10):
     except Exception:
         pool = []
     fresh = 0
-    for _ in range(40):
+    for _ in range(25):
         if fresh >= 20:
             break
         try:

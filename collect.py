@@ -20,7 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 START = time.time()
-GET_DEADLINE = 36 * 60  # seconds after start; the real-GET check stops here so the WARP pool and publishing still fit the 45 min job
+GET_DEADLINE = 37 * 60  # seconds after start; the real-GET check stops here so the WARP pool and publishing still fit the 45 min job
 MAX_LINKS = 20000
 CANDIDATES = 60000  # round-robin pool that gets the TCP check; the first MAX_LINKS survivors are published
 TCP_TIMEOUT = 3.0
@@ -257,11 +257,17 @@ def main():
     try:  # non-Russian links: a real `GET /generate_204` through the server instead of a bare TCP connect
         import geturl_check
         rest = [ln for ln in out if not is_ru(ln, src.get(ln, ""))]
-        good, unknown, done = geturl_check.check(rest, START + GET_DEADLINE, log)
+        good, failed, unknown, done = geturl_check.check(rest, START + GET_DEADLINE, log)
         if len(good) >= 100:  # a broken Xray run must not wipe the list: then the TCP result stands
-            keep = good | set(unknown) | {ln for ln in out if is_ru(ln, src.get(ln, ""))}
-            log(f"get check: kept {len(good)} of {done} tested non-RU links (+{len(unknown)} unsupported transport, TCP only)")
-            out = [ln for ln in out if ln in keep]
+            # Only links that were TESTED and failed are dropped; the part the time budget did not reach keeps
+            # its TCP verdict (it is what v.txt held before this check existed).
+            log(f"get check: {len(good)} ok, {len(failed)} failed of {done} tested; {len(rest) - done - len(unknown)} not reached, {len(unknown)} unsupported transport (TCP only)")
+            unknown_set = set(unknown)
+            strict = [ln for ln in out if ln in good or ln in unknown_set or is_ru(ln, src.get(ln, ""))]
+            os.makedirs(OUT, exist_ok=True)
+            with open(os.path.join(OUT, "g.txt"), "w", encoding="utf-8", newline="\n") as f:
+                f.write("\n".join(strict[:MAX_LINKS]) + "\n")  # strict list: GET-verified + Russian (TCP) + unsupported transport
+            out = [ln for ln in out if ln not in failed]
         else:
             log(f"get check: only {len(good)} passed, keeping the TCP result")
     except Exception as e:
