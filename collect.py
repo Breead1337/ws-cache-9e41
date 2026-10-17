@@ -9,6 +9,7 @@ import html
 import json
 import os
 import random
+import socket
 import re
 import sys
 import time
@@ -19,6 +20,10 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 MAX_LINKS = 20000
+CANDIDATES = 60000  # round-robin pool that gets the TCP check; the first MAX_LINKS survivors are published
+TCP_TIMEOUT = 3.0
+TCP_WORKERS = 400
+TCP_BUDGET = 25 * 60  # seconds; links not checked in time are dropped, never published unchecked
 MAX_REPOS = int(os.environ.get("MAX_REPOS", "300"))
 MAX_FILES_PER_REPO = 15
 MAX_FILE_BYTES = 6_000_000
@@ -176,6 +181,32 @@ def harvest(repo):
     return repo, links
 
 
+def alive(link, cache):
+    """True when host:port of the link accepts a TCP connection (one try, results shared per host:port)."""
+    _, host, port = key(link)
+    hp = (host.strip("[]"), port)
+    if hp not in cache:
+        try:
+            socket.create_connection(hp, timeout=TCP_TIMEOUT).close()
+            cache[hp] = True
+        except OSError:
+            cache[hp] = False
+    return cache[hp]
+
+
+def tcp_filter(links):
+    """Keeps the links whose server answers a TCP connect, in the original order."""
+    cache, deadline = {}, time.time() + TCP_BUDGET
+
+    def check(link):
+        return alive(link, cache) if time.time() < deadline else False
+
+    with ThreadPoolExecutor(max_workers=TCP_WORKERS) as ex:
+        ok = list(ex.map(check, links))
+    log(f"tcp check: {sum(ok)} of {len(links)} alive ({len(cache)} distinct host:port)")
+    return [ln for ln, good in zip(links, ok) if good]
+
+
 def main():
     if not TOKEN:
         sys.exit("GITHUB_TOKEN is required")
@@ -205,9 +236,9 @@ def main():
                 if k not in seen:
                     seen.add(k)
                     out.append(q[i])
-        if len(out) >= MAX_LINKS:
+        if len(out) >= CANDIDATES:
             break
-    out = out[:MAX_LINKS]
+    out = tcp_filter(out[:CANDIDATES])[:MAX_LINKS]
     os.makedirs(OUT, exist_ok=True)
     with open(os.path.join(OUT, "v.txt"), "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(out) + "\n")
