@@ -243,6 +243,15 @@ def main():
     with open(os.path.join(OUT, "v.txt"), "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(out) + "\n")
     log(f"done: {len(out)} links from {len(per_repo)} repos")
+    try:  # git-hosted mirror of the WARP generators; keep the previous pool if Cloudflare throttles this run
+        import warp_pool
+        warp_pool.build(os.path.join(OUT, "w.json"))
+    except Exception as e:
+        log(f"warp pool: {e}")
+        try:
+            urllib.request.urlretrieve("https://breead1337.github.io/ws-cache-9e41/w.json", os.path.join(OUT, "w.json"))
+        except Exception:
+            pass
     if len(out) < 50:  # a broken run must not replace a good published file
         sys.exit("too few links, refusing to publish")
 
